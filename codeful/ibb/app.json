@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Arewa Drape",
+    "slug": "arewa-drape",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#6B1F1F"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.arewadrape.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#6B1F1F"
+      },
+      "package": "com.arewadrape.app"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-image-picker"
+    ]
+  }
+}
