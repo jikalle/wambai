@@ -87,6 +87,7 @@ export function ProductCard({ item, onPress, width = 162 }) {
       </View>
       <View style={pc.info}>
         <Text style={pc.name} numberOfLines={2}>{item.name}</Text>
+        {!!item.shopName && <Text style={pc.shop}>{item.shopName}</Text>}
         <Text style={pc.yards}>{item.yards} per bundle</Text>
         <View style={pc.priceRow}>
           <Text style={pc.price}>₦{Number(item.price).toLocaleString()}</Text>
@@ -109,6 +110,7 @@ const pc = StyleSheet.create({
   originTxt:  { fontSize:9, color:Colors.muted, fontWeight:'600' },
   info:       { padding:10 },
   name:       { fontSize:12, fontWeight:'800', color:Colors.text, marginBottom:2, lineHeight:17, fontFamily:'serif' },
+  shop:       { fontSize:10, color:Colors.muted, marginBottom:4 },
   yards:      { fontSize:10, color:Colors.muted, marginBottom:5 },
   priceRow:   { flexDirection:'row', alignItems:'baseline', gap:5, marginBottom:4 },
   price:      { fontSize:14, fontWeight:'800', color:Colors.primary },
@@ -155,6 +157,11 @@ export function StatusBadge({ status }) {
     processing: { bg:'#FBF6ED', color:Colors.gold, label:'Processing' },
     shipped:    { bg:'#EEF5FF', color:Colors.indigo, label:'Shipped' },
     cancelled:  { bg:'#FEF0EE', color:Colors.error, label:'Cancelled' },
+    pending:    { bg:'#FBF6ED', color:Colors.gold, label:'Pending' },
+    paid:       { bg:'#EAF7EF', color:'#2D6B4A', label:'Paid' },
+    unpaid:     { bg:'#FEF3E8', color:'#B45309', label:'Unpaid' },
+    failed:     { bg:'#FEF0EE', color:Colors.error, label:'Failed' },
+    refunded:   { bg:'#EEF5FF', color:Colors.indigo, label:'Refunded' },
   };
   const c = cfg[status] || cfg.processing;
   return (

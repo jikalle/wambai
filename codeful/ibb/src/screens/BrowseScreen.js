@@ -1,14 +1,14 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, TextInput,
-  StyleSheet, Dimensions, Modal, ScrollView,
+  StyleSheet, Dimensions, Modal, ScrollView, Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow, Spacing } from '../theme';
 import { FabricSwatch, ProductCard } from '../components';
-import { CATEGORIES, PRODUCTS } from '../data';
+import { BRANDS, CATEGORIES, PRODUCTS } from '../data';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 
 const { width: W } = Dimensions.get('window');
@@ -17,9 +17,11 @@ const SORT_OPTIONS = ['Recommended','Price: Low to High','Price: High to Low','R
 export default function BrowseScreen({ navigation, route }) {
   const initCategory = route?.params?.category || null;
   const initQuery    = route?.params?.query    || '';
+  const initShopId   = route?.params?.shopId   || null;
 
   const [search, setSearch]       = useState(initQuery);
   const [category, setCategory]   = useState(initCategory);
+  const [shopId, setShopId]       = useState(initShopId);
   const [sort, setSort]           = useState('Recommended');
   const [showFilter, setShowFilter] = useState(false);
   const [priceRange, setPriceRange] = useState([0, 30000]);
@@ -27,12 +29,13 @@ export default function BrowseScreen({ navigation, route }) {
   const [showSort, setShowSort]   = useState(false);
 
   const [remoteProducts, setRemoteProducts] = useState([]);
+  const [remoteShops, setRemoteShops] = useState([]);
 
   const loadProducts = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) return;
     const { data, error } = await supabase
       .from('products')
-      .select('*, product_images ( url, sort_order )')
+      .select('*, product_images ( url, sort_order ), shop:shops ( id, name, logo_url )')
       .or('status.eq.published,status.is.null')
       .order('created_at', { ascending: false })
       .order('sort_order', { foreignTable: 'product_images', ascending: true });
@@ -50,12 +53,33 @@ export default function BrowseScreen({ navigation, route }) {
       rating: p.rating || 4.7,
       reviews: p.reviews || 40,
       category: p.category || p.swatch || 'ankara',
+      shopId: p.shop_id || p.shop?.id || null,
+      shopName: p.shop?.name || null,
     }));
     setRemoteProducts(mapped);
   }, []);
 
+  const loadShops = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const { data, error } = await supabase
+      .from('shops')
+      .select('id, name, logo_url, status, created_at')
+      .or('status.eq.active,status.is.null')
+      .order('created_at', { ascending: false });
+    if (error) return;
+    setRemoteShops(data || []);
+  }, []);
+
   useEffect(() => { loadProducts(); }, [loadProducts]);
   useFocusEffect(useCallback(() => { loadProducts(); }, [loadProducts]));
+  useEffect(() => { loadShops(); }, [loadShops]);
+  useFocusEffect(useCallback(() => { loadShops(); }, [loadShops]));
+
+  useEffect(() => {
+    if (route?.params?.shopId !== undefined) {
+      setShopId(route.params.shopId || null);
+    }
+  }, [route?.params?.shopId]);
 
   const productList = remoteProducts.length ? remoteProducts : PRODUCTS;
 
@@ -63,15 +87,19 @@ export default function BrowseScreen({ navigation, route }) {
     let list = [...productList];
     if (search) list = list.filter(p => p.name.toLowerCase().includes(search.toLowerCase()) || p.origin.toLowerCase().includes(search.toLowerCase()));
     if (category) list = list.filter(p => p.category === category || p.swatch === category);
+    if (shopId) list = list.filter(p => p.shopId === shopId);
     list = list.filter(p => p.price >= priceRange[0] && p.price <= priceRange[1]);
     if (sort === 'Price: Low to High')  list.sort((a,b) => a.price - b.price);
     if (sort === 'Price: High to Low')  list.sort((a,b) => b.price - a.price);
     if (sort === 'Rating')              list.sort((a,b) => b.rating - a.rating);
     if (sort === 'Newest')              list = list.filter(p => p.badge === 'new_').concat(list.filter(p => p.badge !== 'new_'));
     return list;
-  }, [search, category, sort, priceRange, productList]);
+  }, [search, category, shopId, sort, priceRange, productList]);
 
   const CARD_W = (W - 16*2 - 10) / 2;
+  const shopList = remoteShops.length
+    ? remoteShops
+    : BRANDS.map(b => ({ id: b.id, name: b.name, logo_url: null }));
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -112,6 +140,31 @@ export default function BrowseScreen({ navigation, route }) {
               <FabricSwatch swatchKey={c.key} width={14} height={14} borderRadius={7} />
             </View>
             <Text style={[s.chipTxt, category === c.key && s.chipTxtActive]}>{c.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Merchant chips */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.shopChips}>
+        <TouchableOpacity style={[s.shopChip, !shopId && s.shopChipActive]} onPress={() => setShopId(null)}>
+          <Text style={[s.shopChipTxt, !shopId && s.shopChipTxtActive]}>All Merchants</Text>
+        </TouchableOpacity>
+        {shopList.map(sx => (
+          <TouchableOpacity
+            key={sx.id}
+            style={[s.shopChip, shopId === sx.id && s.shopChipActive]}
+            onPress={() => setShopId(shopId === sx.id ? null : sx.id)}
+          >
+            {!!sx.logo_url ? (
+              <Image source={{ uri: sx.logo_url }} style={s.shopChipLogo} />
+            ) : (
+              <View style={s.shopChipLogoFallback}>
+                <Ionicons name="storefront-outline" size={12} color={Colors.primary} />
+              </View>
+            )}
+            <Text style={[s.shopChipTxt, shopId === sx.id && s.shopChipTxtActive]} numberOfLines={1}>
+              {sx.name}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
@@ -178,7 +231,7 @@ export default function BrowseScreen({ navigation, route }) {
           <View style={s.filterSheet}>
             <View style={s.filterHeader}>
               <Text style={s.sheetTitle}>Filters</Text>
-              <TouchableOpacity onPress={() => { setPriceRange([0,30000]); setCategory(null); }}>
+              <TouchableOpacity onPress={() => { setPriceRange([0,30000]); setCategory(null); setShopId(null); }}>
                 <Text style={s.clearAllTxt}>Clear All</Text>
               </TouchableOpacity>
             </View>
@@ -222,6 +275,7 @@ function ListCard({ item, onPress }) {
       <FabricSwatch swatchKey={item.swatch} width={90} height={90} borderRadius={Radius.md} />
       <View style={lc.info}>
         <Text style={lc.name}>{item.name}</Text>
+        {!!item.shopName && <Text style={lc.shop}>{item.shopName}</Text>}
         <Text style={lc.origin}>📍 {item.origin} · {item.yards}</Text>
         <View style={lc.ratingRow}>
           <Text style={lc.star}>★</Text>
@@ -250,6 +304,13 @@ const s = StyleSheet.create({
   chipActive: { backgroundColor:Colors.primary, borderColor:Colors.primary },
   chipTxt:    { fontSize:12, fontWeight:'700', color:Colors.muted },
   chipTxtActive:{ color:'#fff' },
+  shopChips:  { paddingHorizontal:16, paddingBottom:8, gap:8 },
+  shopChip:   { flexDirection:'row', alignItems:'center', gap:6, paddingHorizontal:10, paddingVertical:6, borderRadius:Radius.full, backgroundColor:Colors.goldBg, borderWidth:1, borderColor:Colors.border, maxWidth:160 },
+  shopChipActive:{ backgroundColor:Colors.primary, borderColor:Colors.primary },
+  shopChipTxt:{ fontSize:11, fontWeight:'700', color:Colors.primary },
+  shopChipTxtActive:{ color:'#fff' },
+  shopChipLogo:{ width:18, height:18, borderRadius:9 },
+  shopChipLogoFallback:{ width:18, height:18, borderRadius:9, backgroundColor:Colors.cream, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:Colors.border },
   resultsBar: { flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingHorizontal:16, paddingVertical:8, borderBottomWidth:1, borderBottomColor:Colors.border },
   resultsTxt: { fontSize:12, color:Colors.muted, fontWeight:'600' },
   resultsRight:{ flexDirection:'row', alignItems:'center', gap:12 },
@@ -293,6 +354,7 @@ const lc = StyleSheet.create({
   card:    { flexDirection:'row', alignItems:'center', backgroundColor:Colors.white, borderRadius:Radius.md, padding:12, marginBottom:10, borderWidth:1, borderColor:Colors.border, gap:12 },
   info:    { flex:1, gap:3 },
   name:    { fontSize:13, fontWeight:'800', color:Colors.text, fontFamily:'serif' },
+  shop:    { fontSize:10, color:Colors.muted },
   origin:  { fontSize:10, color:Colors.muted },
   ratingRow:{ flexDirection:'row', alignItems:'center', gap:3 },
   star:    { color:'#FDC040', fontSize:11 },

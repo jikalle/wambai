@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Alert,
@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow } from '../theme';
-import { FabricSwatch, StatusBadge, Divider } from '../components';
+import { FabricSwatch, StatusBadge } from '../components';
 import { ORDERS, USER } from '../data';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -15,8 +15,41 @@ import { supabase } from '../lib/supabase';
 export default function ProfileScreen({ navigation }) {
   const { user, profile, setIsGuest, isGuest } = useAuth();
   const [activeSection, setActiveSection] = useState('orders'); // 'orders' | 'saved' | 'settings'
+  const [orders, setOrders] = useState(ORDERS);
+  const [ordersLoading, setOrdersLoading] = useState(false);
   const role = profile?.role || user?.user_metadata?.role || 'customer';
   const canInvite = role === 'admin' || role === 'merchant';
+
+  useEffect(() => {
+    const loadOrders = async () => {
+      if (!supabase || !user) return;
+      setOrdersLoading(true);
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id, status, payment_status, total, created_at, order_items(qty, price, total, product:products(name, swatch))')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
+      if (!error && data) {
+        const mapped = data.map(o => ({
+          id: o.id,
+          date: new Date(o.created_at).toLocaleDateString(),
+          status: o.status,
+          payment_status: o.payment_status,
+          total: o.total || 0,
+          items: (o.order_items || []).reduce((s, i) => s + (i.qty || 0), 0),
+          products: (o.order_items || []).map(oi => ({
+            name: oi.product?.name || 'Item',
+            qty: oi.qty || 1,
+            price: oi.price || 0,
+            swatch: oi.product?.swatch || 'ankara',
+          })),
+        }));
+        setOrders(mapped);
+      }
+      setOrdersLoading(false);
+    };
+    loadOrders();
+  }, [user]);
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -84,7 +117,7 @@ export default function ProfileScreen({ navigation }) {
             { icon:'bag-outline',      label:'My Orders',    onPress: () => setActiveSection('orders')   },
             { icon:'heart-outline',    label:'Saved Items',  onPress: () => setActiveSection('saved')    },
             { icon:'location-outline', label:'Addresses',    onPress: () => {}                           },
-            { icon:'card-outline',     label:'Payments',     onPress: () => {}                           },
+            { icon:'card-outline',     label:'Payments',     onPress: () => navigation.navigate('Payments') },
           ].map(a => (
             <TouchableOpacity key={a.label} style={s.quickAction} onPress={a.onPress}>
               <View style={s.quickIcon}>
@@ -108,8 +141,10 @@ export default function ProfileScreen({ navigation }) {
         {activeSection === 'orders' && (
           <View style={s.sectionBody}>
             <Text style={s.sectionTitle}>Order History</Text>
-            {ORDERS.map(order => (
-              <OrderCard key={order.id} order={order} onPress={() => {}} />
+            {ordersLoading && <Text style={s.sectionSub}>Loading…</Text>}
+            {!ordersLoading && orders.length === 0 && <Text style={s.sectionSub}>No orders yet.</Text>}
+            {!ordersLoading && orders.map(order => (
+              <OrderCard key={order.id} order={order} onPress={() => navigation.navigate('OrderDetail', { orderId: order.id })} />
             ))}
           </View>
         )}
@@ -144,6 +179,7 @@ export default function ProfileScreen({ navigation }) {
               <SettingsItem icon="person-outline"     label="Edit Profile"        onPress={() => {}} />
               <SettingsItem icon="call-outline"       label="Phone Number"        value={displayPhone} onPress={() => {}} />
               <SettingsItem icon="location-outline"   label="Delivery Addresses"  onPress={() => {}} />
+              <SettingsItem icon="card-outline"       label="Payments"            onPress={() => navigation.navigate('Payments')} />
             </SettingsGroup>
 
             <SettingsGroup title="Preferences">
@@ -192,9 +228,8 @@ export default function ProfileScreen({ navigation }) {
 
 // ── Order Card ────────────────────────────────────────────────────────────────
 function OrderCard({ order, onPress }) {
-  const [expanded, setExpanded] = useState(false);
   return (
-    <TouchableOpacity style={[oc.card, Shadow.sm]} onPress={() => setExpanded(!expanded)}>
+    <TouchableOpacity style={[oc.card, Shadow.sm]} onPress={onPress}>
       <View style={oc.header}>
         <View>
           <Text style={oc.orderId}>{order.id}</Text>
@@ -202,7 +237,7 @@ function OrderCard({ order, onPress }) {
         </View>
         <View style={oc.right}>
           <StatusBadge status={order.status} />
-          <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={Colors.muted} style={{ marginTop:6 }} />
+          <Ionicons name="chevron-forward" size={16} color={Colors.muted} style={{ marginTop:6 }} />
         </View>
       </View>
 
@@ -214,32 +249,6 @@ function OrderCard({ order, onPress }) {
         <Text style={oc.total}>₦{Number(order.total).toLocaleString()}</Text>
       </View>
 
-      {expanded && (
-        <View style={oc.detail}>
-          <Divider style={{ marginBottom:12 }} />
-          {order.products.map((p, i) => (
-            <View key={i} style={oc.productRow}>
-              <FabricSwatch swatchKey={p.swatch} width={44} height={44} borderRadius={Radius.sm} />
-              <View style={oc.productInfo}>
-                <Text style={oc.productName}>{p.name}</Text>
-                <Text style={oc.productQty}>Qty: {p.qty}</Text>
-              </View>
-              <Text style={oc.productPrice}>₦{Number(p.price).toLocaleString()}</Text>
-            </View>
-          ))}
-          <Divider style={{ marginVertical:12 }} />
-          <View style={oc.totalRow}>
-            <Text style={oc.totalLbl}>Order Total</Text>
-            <Text style={oc.totalVal}>₦{Number(order.total).toLocaleString()}</Text>
-          </View>
-          {order.status === 'delivered' && (
-            <TouchableOpacity style={oc.reorderBtn}>
-              <Ionicons name="refresh" size={14} color={Colors.primary} />
-              <Text style={oc.reorderTxt}>Reorder</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
     </TouchableOpacity>
   );
 }
@@ -301,6 +310,7 @@ const s = StyleSheet.create({
   sectionTabTxtActive:{ color:Colors.primary, fontWeight:'800' },
   sectionBody:   { padding:16 },
   sectionTitle:  { fontSize:16, fontWeight:'800', color:Colors.text, fontFamily:'serif', marginBottom:14 },
+  sectionSub:    { fontSize:11, color:Colors.muted, marginBottom:10 },
   savedGrid:     { gap:10 },
   savedCard:     { flexDirection:'row', alignItems:'center', backgroundColor:Colors.white, borderRadius:Radius.md, overflow:'hidden', borderWidth:1, borderColor:Colors.border },
   savedInfo:     { flex:1, paddingHorizontal:12 },
@@ -322,17 +332,6 @@ const oc = StyleSheet.create({
   swatchRow:   { flexDirection:'row', alignItems:'center', gap:6 },
   itemCount:   { fontSize:11, color:Colors.muted, flex:1 },
   total:       { fontSize:15, fontWeight:'900', color:Colors.primary },
-  detail:      { marginTop:4 },
-  productRow:  { flexDirection:'row', alignItems:'center', gap:10, marginBottom:10 },
-  productInfo: { flex:1 },
-  productName: { fontSize:12, fontWeight:'700', color:Colors.text },
-  productQty:  { fontSize:10, color:Colors.muted },
-  productPrice:{ fontSize:13, fontWeight:'800', color:Colors.text },
-  totalRow:    { flexDirection:'row', justifyContent:'space-between' },
-  totalLbl:    { fontSize:13, color:Colors.muted },
-  totalVal:    { fontSize:16, fontWeight:'900', color:Colors.primary },
-  reorderBtn:  { flexDirection:'row', alignItems:'center', gap:6, justifyContent:'center', marginTop:12, paddingVertical:10, backgroundColor:Colors.cream, borderRadius:Radius.md, borderWidth:1, borderColor:Colors.border },
-  reorderTxt:  { fontSize:13, fontWeight:'700', color:Colors.primary },
 });
 
 const sg = StyleSheet.create({

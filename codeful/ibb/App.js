@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
+import * as Linking from 'expo-linking';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -19,6 +20,11 @@ import AuthScreen         from './src/screens/AuthScreen';
 import ProfileScreen      from './src/screens/ProfileScreen';
 import MerchantInviteScreen from './src/screens/MerchantInviteScreen';
 import MerchantDashboardScreen from './src/screens/MerchantDashboardScreen';
+import ShopScreen from './src/screens/ShopScreen';
+import OrderDetailScreen from './src/screens/OrderDetailScreen';
+import MerchantOrderDetailScreen from './src/screens/MerchantOrderDetailScreen';
+import PaymentReturnScreen from './src/screens/PaymentReturnScreen';
+import PaymentsScreen from './src/screens/PaymentsScreen';
 
 const Stack = createStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -100,6 +106,31 @@ function RootNavigator() {
             component={MerchantDashboardScreen}
             options={{ presentation: 'card' }}
           />
+          <Stack.Screen
+            name="OrderDetail"
+            component={OrderDetailScreen}
+            options={{ presentation: 'card' }}
+          />
+          <Stack.Screen
+            name="MerchantOrderDetail"
+            component={MerchantOrderDetailScreen}
+            options={{ presentation: 'card' }}
+          />
+          <Stack.Screen
+            name="Shop"
+            component={ShopScreen}
+            options={{ presentation: 'card' }}
+          />
+          <Stack.Screen
+            name="PaymentReturn"
+            component={PaymentReturnScreen}
+            options={{ presentation: 'card' }}
+          />
+          <Stack.Screen
+            name="Payments"
+            component={PaymentsScreen}
+            options={{ presentation: 'card' }}
+          />
         </>
       ) : (
         <Stack.Screen name="Auth"          component={AuthScreen} />
@@ -110,11 +141,20 @@ function RootNavigator() {
 
 // ── App Root ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const linking = {
+    prefixes: [Linking.createURL('/'), 'arewadrape://'],
+    config: {
+      screens: {
+        PaymentReturn: 'payment/return',
+      },
+    },
+  };
+
   return (
     <SafeAreaProvider>
       <AuthProvider>
         <CartProvider>
-          <NavigationContainer>
+          <NavigationContainer linking={linking}>
             <StatusBar style="dark" />
             <RootNavigator />
           </NavigationContainer>

@@ -5,21 +5,40 @@ const CartContext = createContext(null);
 export function CartProvider({ children }) {
   const [items, setItems] = useState([]);
 
+  const getKey = (itemOrId) => {
+    if (typeof itemOrId === 'string') return itemOrId;
+    if (!itemOrId) return null;
+    if (itemOrId.cartItemId) return itemOrId.cartItemId;
+    if (itemOrId.selectedImageId) return `${itemOrId.id}:${itemOrId.selectedImageId}`;
+    if (itemOrId.selectedImage) return `${itemOrId.id}:${itemOrId.selectedImage}`;
+    return itemOrId.id;
+  };
+
   const addItem = (product, qty = 1) => {
     setItems(prev => {
-      const existing = prev.find(i => i.id === product.id);
+      const cartItemId = getKey(product);
+      const existing = prev.find(i => getKey(i) === cartItemId);
       if (existing) {
-        return prev.map(i => i.id === product.id ? { ...i, qty: i.qty + qty } : i);
+        return prev.map(i => getKey(i) === cartItemId
+          ? {
+            ...i,
+            qty: i.qty + qty,
+            image: product.image || i.image,
+            selectedImage: product.selectedImage || i.selectedImage,
+            selectedImageIndex: typeof product.selectedImageIndex === 'number' ? product.selectedImageIndex : i.selectedImageIndex,
+          }
+          : i
+        );
       }
-      return [...prev, { ...product, qty }];
+      return [...prev, { ...product, cartItemId, qty }];
     });
   };
 
-  const removeItem = (id) => setItems(prev => prev.filter(i => i.id !== id));
+  const removeItem = (id) => setItems(prev => prev.filter(i => getKey(i) !== id));
 
   const updateQty = (id, qty) => {
     if (qty < 1) return removeItem(id);
-    setItems(prev => prev.map(i => i.id === id ? { ...i, qty } : i));
+    setItems(prev => prev.map(i => getKey(i) === id ? { ...i, qty } : i));
   };
 
   const clearCart = () => setItems([]);

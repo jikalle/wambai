@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, Dimensions, Alert, Image,
@@ -24,16 +24,22 @@ export default function ProductDetailScreen({ navigation, route }) {
   const [qty, setQty] = useState(1);
   const [saved, setSaved] = useState(false);
   const [activeTab, setActiveTab] = useState('desc');
+  const [activeImage, setActiveImage] = useState(0);
+  const heroRef = useRef(null);
 
   useEffect(() => {
     const load = async () => {
       if (!isSupabaseConfigured || !supabase) return;
       const { data, error } = await supabase
         .from('products')
-        .select('*, product_images ( url, sort_order )')
+        .select('*, product_images ( url, sort_order ), shop:shops ( id, name, logo_url )')
         .eq('id', productId)
         .single();
       if (!error && data) {
+        const imageRows = [...(data.product_images || [])]
+          .sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0))
+          .map(i => ({ id: i.id, url: i.url }))
+          .filter(i => i.url);
         const mapped = {
           id: data.id,
           name: data.name,
@@ -42,6 +48,7 @@ export default function ProductDetailScreen({ navigation, route }) {
           badge: data.badge || null,
           swatch: data.swatch || 'ankara',
           image: data.product_images?.[0]?.url || null,
+          images: imageRows,
           yards: data.yards || '6 yds',
           origin: data.origin || 'Kano',
           category: data.category || data.swatch || 'ankara',
@@ -49,12 +56,16 @@ export default function ProductDetailScreen({ navigation, route }) {
           details: data.details || [],
           rating: data.rating || 4.7,
           reviews: data.reviews || 40,
+          shopId: data.shop_id || data.shop?.id || null,
+          shopName: data.shop?.name || null,
+          shopLogo: data.shop?.logo_url || null,
         };
         setProduct(mapped);
+        setActiveImage(0);
       }
       const { data: list } = await supabase
         .from('products')
-        .select('*, product_images ( url, sort_order )')
+        .select('*, product_images ( url, sort_order ), shop:shops ( id, name, logo_url )')
         .or('status.eq.published,status.is.null')
         .order('created_at', { ascending: false })
         .order('sort_order', { foreignTable: 'product_images', ascending: true })
@@ -74,6 +85,8 @@ export default function ProductDetailScreen({ navigation, route }) {
           description: p.description || '',
           rating: p.rating || 4.7,
           reviews: p.reviews || 40,
+          shopId: p.shop_id || p.shop?.id || null,
+          shopName: p.shop?.name || null,
         }));
         setAllProducts(mappedList);
       }
@@ -81,12 +94,20 @@ export default function ProductDetailScreen({ navigation, route }) {
     load();
   }, [productId]);
 
+  const imageRows = product?.images?.length
+    ? product.images
+    : (product?.image ? [{ id: null, url: product.image }] : []);
+  const imageUrls = imageRows.map(i => i.url);
+
   const relatedProducts = product.relatedIds
     ? allProducts.filter(p => product.relatedIds?.includes(p.id))
     : allProducts.filter(p => p.id !== product.id).slice(0, 6);
 
   const handleAddToCart = () => {
-    addItem(product, qty);
+    const selectedImage = imageUrls[activeImage] || product.image || null;
+    const selectedImageId = imageRows[activeImage]?.id || null;
+    const cartItemId = selectedImageId ? `${product.id}:${selectedImageId}` : product.id;
+    addItem({ ...product, image: selectedImage, selectedImage, selectedImageId, selectedImageIndex: activeImage, cartItemId }, qty);
     Alert.alert('Added to Cart', `${qty} × ${product.name} added to your cart.`, [
       { text: 'Continue Shopping', style: 'cancel' },
       { text: 'View Cart', onPress: () => navigation.navigate('CartTab') },
@@ -94,7 +115,10 @@ export default function ProductDetailScreen({ navigation, route }) {
   };
 
   const handleBuyNow = () => {
-    addItem(product, qty);
+    const selectedImage = imageUrls[activeImage] || product.image || null;
+    const selectedImageId = imageRows[activeImage]?.id || null;
+    const cartItemId = selectedImageId ? `${product.id}:${selectedImageId}` : product.id;
+    addItem({ ...product, image: selectedImage, selectedImage, selectedImageId, selectedImageIndex: activeImage, cartItemId }, qty);
     navigation.navigate('CartTab');
   };
 
@@ -120,10 +144,29 @@ export default function ProductDetailScreen({ navigation, route }) {
 
         {/* Fabric swatch hero */}
         <View style={s.swatchHero}>
-          {product.image
-            ? <Image source={{ uri: product.image }} style={{ width: W, height: 280 }} resizeMode="cover" />
-            : <FabricSwatch swatchKey={product.swatch} width={W} height={280} />
-          }
+          {imageUrls.length > 0 ? (
+            imageUrls.length === 1 ? (
+              <Image source={{ uri: imageUrls[0] }} style={{ width: W, height: 280 }} resizeMode="cover" />
+            ) : (
+              <ScrollView
+                ref={heroRef}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                onMomentumScrollEnd={(e) => {
+                  const x = e.nativeEvent.contentOffset.x;
+                  const idx = Math.round(x / W);
+                  setActiveImage(idx);
+                }}
+              >
+                {imageUrls.map((url, idx) => (
+                  <Image key={`${url}-${idx}`} source={{ uri: url }} style={{ width: W, height: 280 }} resizeMode="cover" />
+                ))}
+              </ScrollView>
+            )
+          ) : (
+            <FabricSwatch swatchKey={product.swatch} width={W} height={280} />
+          )}
           {/* Gradient overlay at bottom */}
           <LinearGradient colors={['transparent', 'rgba(42,26,14,0.6)']} style={s.heroOverlay}>
             <View style={s.heroBadges}>
@@ -139,6 +182,29 @@ export default function ProductDetailScreen({ navigation, route }) {
             </View>
           </LinearGradient>
         </View>
+        {imageUrls.length > 1 && (
+          <View style={s.heroDotsOverlay}>
+            {imageUrls.map((_, i) => (
+              <View key={`dot-${i}`} style={[s.heroDot, i === activeImage && s.heroDotActive]} />
+            ))}
+          </View>
+        )}
+        {imageUrls.length > 1 && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.thumbRow}>
+            {imageUrls.map((url, idx) => (
+              <TouchableOpacity
+                key={`${url}-${idx}`}
+                style={[s.thumb, idx === activeImage && s.thumbActive]}
+                onPress={() => {
+                  setActiveImage(idx);
+                  heroRef.current?.scrollTo?.({ x: idx * W, animated: true });
+                }}
+              >
+                <Image source={{ uri: url }} style={s.thumbImg} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        )}
 
         {/* Product info card */}
         <View style={s.infoCard}>
@@ -153,6 +219,16 @@ export default function ProductDetailScreen({ navigation, route }) {
 
           {/* Name */}
           <Text style={s.productName}>{product.name}</Text>
+          {!!product.shopName && (
+            <TouchableOpacity style={s.shopRow} onPress={() => navigation.navigate('Shop', { shopId: product.shopId })}>
+              {product.shopLogo
+                ? <Image source={{ uri: product.shopLogo }} style={s.shopLogo} />
+                : <Ionicons name="storefront-outline" size={16} color={Colors.muted} />
+              }
+              <Text style={s.shopName}>{product.shopName}</Text>
+              <Ionicons name="chevron-forward" size={14} color={Colors.muted} />
+            </TouchableOpacity>
+          )}
 
           {/* Origin & yards */}
           <View style={s.metaRow}>
@@ -291,11 +367,21 @@ const s = StyleSheet.create({
   badgeTxt:     { color:'#fff', fontSize:9, fontWeight:'800', letterSpacing:0.5 },
   originBadge:  { flexDirection:'row', alignItems:'center', gap:4, backgroundColor:'rgba(28,15,8,0.6)', paddingHorizontal:10, paddingVertical:4, borderRadius:Radius.full },
   originTxt:    { fontSize:11, color:Colors.goldLight, fontWeight:'700' },
+  heroDotsOverlay:{ position:'absolute', bottom:10, left:0, right:0, flexDirection:'row', justifyContent:'center', gap:6 },
+  heroDot:      { width:6, height:6, borderRadius:3, backgroundColor:Colors.border },
+  heroDotActive:{ width:18, backgroundColor:Colors.gold },
+  thumbRow:     { paddingHorizontal:16, paddingTop:10, gap:8 },
+  thumb:        { width:64, height:64, borderRadius:10, borderWidth:1, borderColor:Colors.border, overflow:'hidden' },
+  thumbActive:  { borderColor:Colors.primary, borderWidth:2 },
+  thumbImg:     { width:'100%', height:'100%' },
   infoCard:     { backgroundColor:Colors.white, borderTopLeftRadius:24, borderTopRightRadius:24, marginTop:-16, padding:20 },
   ratingRow:    { flexDirection:'row', alignItems:'center', gap:3, marginBottom:8 },
   ratingVal:    { fontSize:13, fontWeight:'700', color:Colors.text, marginLeft:4 },
   ratingCount:  { fontSize:12, color:Colors.muted },
   productName:  { fontSize:22, fontWeight:'900', color:Colors.text, fontFamily:'serif', marginBottom:10, lineHeight:28 },
+  shopRow:      { flexDirection:'row', alignItems:'center', gap:8, backgroundColor:Colors.goldBg, borderWidth:1, borderColor:Colors.border, borderRadius:Radius.md, paddingVertical:6, paddingHorizontal:10, alignSelf:'flex-start', marginBottom:12 },
+  shopLogo:     { width:22, height:22, borderRadius:6, borderWidth:1, borderColor:Colors.border, backgroundColor:Colors.cream },
+  shopName:     { fontSize:11, fontWeight:'700', color:Colors.primary },
   metaRow:      { flexDirection:'row', gap:10, marginBottom:14 },
   metaChip:     { flexDirection:'row', alignItems:'center', gap:4, backgroundColor:Colors.cream, paddingHorizontal:10, paddingVertical:5, borderRadius:Radius.full, borderWidth:1, borderColor:Colors.border },
   metaTxt:      { fontSize:11, color:Colors.muted, fontWeight:'600' },

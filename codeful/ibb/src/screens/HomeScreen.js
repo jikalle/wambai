@@ -43,14 +43,15 @@ const FEATURES = [
   { icon: '🔒', title: 'Secure Payment', desc: 'Pay with card, transfer or USSD' },
 ];
 
-const BANNERS = [
+const HERO_CONFIG = [
   {
     colors: ['#2A1A0E', '#6B1F1F', '#C9922A'],
     title: 'Premium Fabrics\nFor Every Occasion',
     sub: 'Hand-woven Aso-Oke, Damask, Ankara & more. Delivered across Nigeria.',
     btn: 'Shop Now',
     btn2: 'View Deals',
-    swatch: 'asooke',
+    swatch: 'ankara',
+    category: 'ankara',
   },
   {
     colors: ['#1E2E6E', '#2A4BBF', '#C9922A'],
@@ -58,7 +59,35 @@ const BANNERS = [
     sub: 'Special prices on Guinea Brocade, Lace and Shadda for the season.',
     btn: 'Shop Sallah',
     btn2: 'Get Offer',
-    swatch: 'guinea',
+    swatch: 'shadda',
+    category: 'shadda',
+  },
+  {
+    colors: ['#2D6B4A', '#1A4A32', '#C9922A'],
+    title: 'Royal Brocade\nStatement Pieces',
+    sub: 'Textured brocade for chieftaincy and special occasions.',
+    btn: 'Shop Brocade',
+    btn2: 'View Styles',
+    swatch: 'brocade',
+    category: 'brocade',
+  },
+  {
+    colors: ['#4A1A6B', '#6B1F1F', '#C9922A'],
+    title: 'Elegant Lace\nFor Bridal Parties',
+    sub: 'Swiss voile & net lace for unforgettable looks.',
+    btn: 'Shop Lace',
+    btn2: 'See New',
+    swatch: 'lace',
+    category: 'lace',
+  },
+  {
+    colors: ['#1E2E6E', '#2A4BBF', '#C9922A'],
+    title: 'Classic Aso‑Oke\nHand‑Woven Heritage',
+    sub: 'Authentic weaves with modern patterns and colors.',
+    btn: 'Shop Aso‑Oke',
+    btn2: 'Explore',
+    swatch: 'asooke',
+    category: 'asooke',
   },
 ];
 
@@ -78,6 +107,9 @@ const mapProduct = (p) => ({
   description: p.description || '',
   rating: p.rating || 4.7,
   reviews: p.reviews || 40,
+  shopId: p.shop_id || p.shop?.id || null,
+  shopName: p.shop?.name || null,
+  shopLogo: p.shop?.logo_url || null,
 });
 
 const HScroll = ({ children, contentStyle }) => (
@@ -113,6 +145,7 @@ function PCard({ item, onPress }) {
       </View>
       <View style={s.pInfo}>
         <Text style={s.pName} numberOfLines={2}>{item.name}</Text>
+        {!!item.shopName && <Text style={s.pShop}>{item.shopName}</Text>}
         <Text style={s.pYards}>{item.yards} per bundle</Text>
         <View style={s.priceRow}>
           <Text style={s.price}>{fmt(item.price)}</Text>
@@ -138,18 +171,22 @@ function PCard({ item, onPress }) {
   );
 }
 
-function Hero() {
+function Hero({ banners = HERO_CONFIG, onPrimary, onSecondary }) {
   const [active, setActive] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setActive(p => (p + 1) % BANNERS.length), 4000);
+    const t = setInterval(() => setActive(p => (p + 1) % banners.length), 4000);
     return () => clearInterval(t);
-  }, []);
-  const b = BANNERS[active];
+  }, [banners.length]);
+  const b = banners[active] || banners[0];
 
   return (
     <View style={s.heroWrap}>
-      <LinearGradient colors={b.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
-        <View style={s.heroInner}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => onPrimary?.(b)}
+      >
+        <LinearGradient colors={b.colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
+          <View style={s.heroInner}>
           <View style={s.heroOverlayCircleLg} />
           <View style={s.heroOverlayCircleSm} />
           <View style={{ flex: 1, zIndex: 1 }}>
@@ -159,21 +196,33 @@ function Hero() {
             <Text style={s.heroTitle}>{b.title}</Text>
             <Text style={s.heroSub}>{b.sub}</Text>
             <View style={s.heroBtnRow}>
-              <TouchableOpacity style={s.heroBtnPrimary}>
+              <TouchableOpacity
+                style={s.heroBtnPrimary}
+                onPress={() => onPrimary?.(b)}
+                onStartShouldSetResponder={() => true}
+              >
                 <Text style={s.heroBtnPrimaryTxt}>{b.btn}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={s.heroBtnGhost}>
+              <TouchableOpacity
+                style={s.heroBtnGhost}
+                onPress={() => onSecondary?.(b)}
+                onStartShouldSetResponder={() => true}
+              >
                 <Text style={s.heroBtnGhostTxt}>{b.btn2}</Text>
               </TouchableOpacity>
             </View>
           </View>
           <View style={s.heroSwatch}>
-            <FabricSwatch swatchKey={b.swatch} width={85} height={110} borderRadius={10} />
+            {b.image
+              ? <Image source={{ uri: b.image }} style={s.heroImage} />
+              : <FabricSwatch swatchKey={b.swatch} width={85} height={110} borderRadius={10} />
+            }
           </View>
-        </View>
-      </LinearGradient>
+          </View>
+        </LinearGradient>
+      </TouchableOpacity>
       <View style={s.heroDots}>
-        {BANNERS.map((_, i) => (
+        {banners.map((_, i) => (
           <TouchableOpacity key={i} onPress={() => setActive(i)} style={[s.heroDot, i === active && s.heroDotActive]} />
         ))}
       </View>
@@ -275,47 +324,106 @@ function Countdown() {
   );
 }
 
-function FabricTabs({ onSelectProduct, products }) {
-  const [active, setActive] = useState('trending');
-  const tabs = [['trending', 'Trending'], ['wedding', 'Wedding'], ['sallah', 'Sallah']];
+function CategoryTabs({ onSelectProduct, products, categories }) {
+  const base = products || [];
+  const allCats = categories || CATEGORIES;
+  const counts = useMemo(() => base.reduce((acc, p) => {
+    const key = p.category || p.swatch || 'ankara';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {}), [base]);
+  const tabs = useMemo(() => allCats
+    .map(c => ({
+      key: c.key,
+      label: c.label,
+      count: counts[c.key] || 0,
+    }))
+    .filter(t => t.count > 0), [allCats, counts]);
+  const categoryImages = useMemo(() => base.reduce((acc, p) => {
+    const key = p.category || p.swatch || 'ankara';
+    if (!acc[key] && p.image) acc[key] = p.image;
+    return acc;
+  }, {}), [base]);
+  const [active, setActive] = useState(tabs[0]?.key || null);
+
+  useEffect(() => {
+    if (!active || !tabs.find(t => t.key === active)) {
+      setActive(tabs[0]?.key || null);
+    }
+  }, [tabs, active]);
+
   const list = useMemo(() => {
-    const base = products || [];
-    if (active === 'wedding') return base.slice(3, 6);
-    if (active === 'sallah') return base.slice(6, 9);
-    return base.slice(0, 3);
-  }, [active, products]);
+    if (!active) return base.slice(0, 6);
+    return base.filter(p => (p.category || p.swatch) === active).slice(0, 6);
+  }, [active, base]);
 
   return (
     <View>
-      <SectionHeader title="Browse by Occasion" />
-      <View style={s.tabs}>
-        {tabs.map(([k, l]) => (
-          <TouchableOpacity key={k} onPress={() => setActive(k)} style={[s.tab, active === k && s.tabActive]}>
-            <Text style={[s.tabTxt, active === k && s.tabTxtActive]}>{l}</Text>
+      <SectionHeader title="Browse by Category" />
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.tabs}>
+        {tabs.map(t => (
+          <TouchableOpacity key={t.key} onPress={() => setActive(t.key)} style={[s.tab, active === t.key && s.tabActive]}>
+            <View style={s.tabIcon}>
+              {categoryImages[t.key]
+                ? <Image source={{ uri: categoryImages[t.key] }} style={s.tabIconImg} />
+                : <FabricSwatch swatchKey={t.key} width={20} height={20} borderRadius={10} />
+              }
+            </View>
+            <Text style={[s.tabTxt, active === t.key && s.tabTxtActive]}>{t.label}</Text>
+            <View style={[s.tabCountPill, active === t.key && s.tabCountPillActive]}>
+              <Text style={[s.tabCountTxt, active === t.key && s.tabCountTxtActive]}>{t.count}</Text>
+            </View>
           </TouchableOpacity>
         ))}
-      </View>
-      <HScroll>{list.map(p => <PCard key={p.id} item={p} onPress={() => onSelectProduct?.(p.id)} />)}</HScroll>
+      </ScrollView>
+      <HScroll>
+        {list.length === 0 && (
+          <View style={s.emptyInline}>
+            <Text style={s.emptyInlineTxt}>No items in this category yet.</Text>
+          </View>
+        )}
+        {list.map(p => <PCard key={p.id} item={p} onPress={() => onSelectProduct?.(p.id)} />)}
+      </HScroll>
     </View>
   );
 }
 
-function Brands() {
+function Brands({ shops = [], counts = {}, onSelectShop }) {
   const cardW = (W - 16 * 2 - 9) / 2;
+  const list = shops.length
+    ? shops
+    : BRANDS.map(b => ({
+        id: b.id,
+        name: b.name,
+        logo_url: null,
+        swatch: b.swatch,
+        location: b.location,
+        items: b.items,
+      }));
   return (
     <View>
       <SectionHeader title="Trusted Merchants" onMore={() => {}} />
       <View style={s.brandGrid}>
-        {BRANDS.map(b => (
-          <View key={b.id} style={[s.brandCard, { width: cardW }, Shadow.sm]}>
+        {list.map(b => (
+          <TouchableOpacity
+            key={b.id}
+            style={[s.brandCard, { width: cardW }, Shadow.sm]}
+            onPress={() => onSelectShop?.(b.id)}
+            activeOpacity={0.85}
+          >
             <View style={s.brandSwatch}>
-              <FabricSwatch swatchKey={b.swatch} width={44} height={44} borderRadius={8} />
+              {b.logo_url
+                ? <Image source={{ uri: b.logo_url }} style={s.brandLogo} />
+                : <FabricSwatch swatchKey={b.swatch || 'ankara'} width={44} height={44} borderRadius={8} />
+              }
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.brandName} numberOfLines={1}>{b.name}</Text>
-              <Text style={s.brandMeta}>📍 {b.location} · {b.items} items</Text>
+              <Text style={s.brandMeta}>
+                📍 {b.location || 'Online'} · {(counts[b.id] ?? b.items ?? 0)} items
+              </Text>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
       </View>
     </View>
@@ -407,12 +515,13 @@ function Footer() {
 export default function HomeScreen({ navigation }) {
   const [search, setSearch] = useState('');
   const [remoteProducts, setRemoteProducts] = useState([]);
+  const [remoteShops, setRemoteShops] = useState([]);
 
   const loadProducts = useCallback(async () => {
     if (!isSupabaseConfigured || !supabase) return;
     const { data, error } = await supabase
       .from('products')
-      .select('*, product_images ( url, sort_order )')
+      .select('*, product_images ( url, sort_order ), shop:shops ( id, name, logo_url )')
       .or('status.eq.published,status.is.null')
       .order('created_at', { ascending: false })
       .order('sort_order', { foreignTable: 'product_images', ascending: true });
@@ -426,10 +535,80 @@ export default function HomeScreen({ navigation }) {
     setRemoteProducts(mapped);
   }, []);
 
+  const loadShops = useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase) return;
+    const { data, error } = await supabase
+      .from('shops')
+      .select('id, name, logo_url, status, created_at')
+      .or('status.eq.active,status.is.null')
+      .order('created_at', { ascending: false });
+    if (error) return;
+    setRemoteShops(data || []);
+  }, []);
+
   useEffect(() => { loadProducts(); }, [loadProducts]);
   useFocusEffect(useCallback(() => { loadProducts(); }, [loadProducts]));
+  useEffect(() => { loadShops(); }, [loadShops]);
+  useFocusEffect(useCallback(() => { loadShops(); }, [loadShops]));
 
   const productList = remoteProducts.length ? remoteProducts : PRODUCTS;
+  const shopCounts = useMemo(() => {
+    if (!remoteProducts.length) return {};
+    return remoteProducts.reduce((acc, p) => {
+      if (!p.shopId) return acc;
+      acc[p.shopId] = (acc[p.shopId] || 0) + 1;
+      return acc;
+    }, {});
+  }, [remoteProducts]);
+  const categoryCounts = useMemo(() => {
+    return productList.reduce((acc, p) => {
+      const key = p.category || p.swatch || 'ankara';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+  }, [productList]);
+  const categoryImages = useMemo(() => {
+    return productList.reduce((acc, p) => {
+      const key = p.category || p.swatch || 'ankara';
+      if (!acc[key] && p.image) acc[key] = p.image;
+      return acc;
+    }, {});
+  }, [productList]);
+  const categoryLabelMap = useMemo(
+    () => CATEGORIES.reduce((acc, c) => ({ ...acc, [c.key]: c.label }), {}),
+    [],
+  );
+  const heroBanners = useMemo(() => {
+    const pickFrom = (list) => {
+      if (!list?.length) return null;
+      return list[Math.floor(Math.random() * list.length)];
+    };
+    return HERO_CONFIG.map(b => {
+      const key = b.category || b.swatch;
+      const scoped = productList
+        .filter(p => (p.category || p.swatch) === key && p.image);
+      const picked = pickFrom(scoped);
+      if (!picked) return { ...b, image: null };
+      const label = categoryLabelMap[key] || 'Collection';
+      const origin = picked.origin || 'Nigeria';
+      const yards = picked.yards && /yd|yard/i.test(picked.yards) ? ` · ${picked.yards}` : '';
+      const price = picked.price ? ` · ${fmt(picked.price)}` : '';
+      const tag =
+        picked.badge === 'sale' ? 'On Sale' :
+        picked.badge === 'new_' ? 'New Arrival' :
+        'Now Available';
+      const shortName = picked.name?.split(' ').slice(0, 3).join(' ') || 'Item';
+      return {
+        ...b,
+        image: picked.image,
+        productId: picked.id,
+        title: `${picked.name}\n${tag}`,
+        sub: `${label} · ${origin}${yards}${price}`,
+        btn: `Shop ${shortName}`,
+        btn2: 'View Details',
+      };
+    });
+  }, [productList, categoryLabelMap]);
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
@@ -475,21 +654,40 @@ export default function HomeScreen({ navigation }) {
       </LinearGradient>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={s.scroll}>
-        <Hero />
+        <Hero
+          banners={heroBanners}
+          onPrimary={(b) => {
+            if (b?.productId) {
+              navigation.navigate('ProductDetail', { productId: b.productId });
+              return;
+            }
+            if (b?.category) {
+              navigation.navigate('Browse', { category: b.category });
+            }
+          }}
+          onSecondary={(b) => {
+            if (b?.category) {
+              navigation.navigate('Browse', { category: b.category });
+            }
+          }}
+        />
 
-        <SectionHeader title="Browse by Fabric" onMore={() => navigation.navigate('Browse')} />
+        <SectionHeader title="Browse by Category" onMore={() => navigation.navigate('Browse')} />
         <HScroll>
-          {CATEGORIES.map(c => (
+          {CATEGORIES.filter(c => (categoryCounts[c.key] || 0) > 0).map(c => (
             <TouchableOpacity
               key={c.id}
               onPress={() => navigation.navigate('Browse', { category: c.key })}
               style={s.categoryItem}
             >
               <View style={[s.categoryCircle, { borderColor: Colors.border }]}>
-                <FabricSwatch swatchKey={c.key} width={58} height={58} borderRadius={29} />
+                {categoryImages[c.key]
+                  ? <Image source={{ uri: categoryImages[c.key] }} style={s.categoryImage} />
+                  : <FabricSwatch swatchKey={c.key} width={58} height={58} borderRadius={29} />
+                }
               </View>
               <Text style={s.categoryLabel}>{c.label}</Text>
-              <Text style={s.categoryCount}>{c.count} items</Text>
+              <Text style={s.categoryCount}>{categoryCounts[c.key] || 0} items</Text>
             </TouchableOpacity>
           ))}
         </HScroll>
@@ -500,6 +698,11 @@ export default function HomeScreen({ navigation }) {
             <PCard key={p.id} item={p} onPress={() => navigation.navigate('ProductDetail', { productId: p.id })} />
           ))}
         </HScroll>
+
+        <CategoryTabs
+          products={productList}
+          onSelectProduct={(id) => navigation.navigate('ProductDetail', { productId: id })}
+        />
 
         <PromoBanner />
         <FeaturedSection />
@@ -527,11 +730,11 @@ export default function HomeScreen({ navigation }) {
           ))}
         </View>
 
-        <FabricTabs
-          products={productList}
-          onSelectProduct={(id) => navigation.navigate('ProductDetail', { productId: id })}
+        <Brands
+          shops={remoteShops}
+          counts={shopCounts}
+          onSelectShop={(id) => navigation.navigate('Shop', { shopId: id })}
         />
-        <Brands />
         <BlogSection />
         <Newsletter />
         <FeaturesStrip />
@@ -576,6 +779,7 @@ const s = StyleSheet.create({
   heroBtnGhost: { borderRadius: 9, paddingVertical: 8, paddingHorizontal: 14, borderWidth: 1.5, borderColor: 'rgba(255,253,248,0.5)' },
   heroBtnGhostTxt: { color: Colors.white, fontSize: 12, fontWeight: '700' },
   heroSwatch: { width: 85, height: 110, borderRadius: 12, overflow: 'hidden', marginLeft: 12, borderWidth: 2, borderColor: 'rgba(201,146,42,0.5)' },
+  heroImage: { width: 85, height: 110 },
   heroDots: { flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 10 },
   heroDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: Colors.border },
   heroDotActive: { width: 20, backgroundColor: Colors.gold },
@@ -583,6 +787,7 @@ const s = StyleSheet.create({
   hScroll: { paddingHorizontal: 16, paddingBottom: 4 },
   categoryItem: { alignItems: 'center', marginRight: 10, minWidth: 68 },
   categoryCircle: { width: 58, height: 58, borderRadius: 29, overflow: 'hidden', borderWidth: 2 },
+  categoryImage: { width: 58, height: 58 },
   categoryLabel: { fontSize: 10, fontWeight: '800', color: Colors.text, marginTop: 5 },
   categoryCount: { fontSize: 9, color: Colors.muted },
 
@@ -593,6 +798,7 @@ const s = StyleSheet.create({
   originTxt: { fontSize: 9, color: Colors.muted, fontWeight: '600' },
   pInfo: { padding: 10 },
   pName: { fontSize: 12, fontWeight: '800', color: Colors.text, marginBottom: 2, lineHeight: 16, fontFamily: 'serif' },
+  pShop: { fontSize: 10, color: Colors.muted, marginBottom: 4 },
   pYards: { fontSize: 10, color: Colors.muted, marginBottom: 6 },
   priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 5, marginBottom: 8 },
   price: { fontSize: 14, fontWeight: '800', color: Colors.primary },
@@ -603,6 +809,8 @@ const s = StyleSheet.create({
   qtyBtn: { flex: 1, alignItems: 'center', paddingVertical: 6 },
   qtyBtnTxt: { fontSize: 16, fontWeight: '700', color: Colors.primary },
   qtyVal: { minWidth: 26, textAlign: 'center', fontSize: 13, fontWeight: '800', color: Colors.text },
+  emptyInline: { paddingHorizontal: 16, paddingVertical: 20 },
+  emptyInlineTxt: { fontSize: 11, color: Colors.muted },
 
   promoWrap: { marginTop: 18, marginHorizontal: 16 },
   promo: { borderRadius: Radius.lg, overflow: 'hidden', height: 130 },
@@ -637,15 +845,22 @@ const s = StyleSheet.create({
   countBtnTxt: { color: Colors.white, fontSize: 12, fontWeight: '800' },
   countSwatch: { width: 80, height: 100, borderRadius: 12, overflow: 'hidden', borderWidth: 2, borderColor: 'rgba(201,146,42,0.5)' },
 
-  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.cream, borderRadius: 10, padding: 4, gap: 3 },
-  tab: { flex: 1, paddingVertical: 7, borderRadius: 7, alignItems: 'center' },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, marginBottom: 12, backgroundColor: Colors.cream, borderRadius: 12, padding: 6, gap: 8 },
+  tab: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, paddingHorizontal: 12, borderRadius: 9 },
   tabActive: { backgroundColor: Colors.primary },
-  tabTxt: { fontSize: 10, fontWeight: '700', color: Colors.muted },
+  tabTxt: { fontSize: 11, fontWeight: '700', color: Colors.muted },
   tabTxtActive: { color: Colors.white },
+  tabIcon: { width: 22, height: 22, borderRadius: 11, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.cream, alignItems: 'center', justifyContent: 'center' },
+  tabIconImg: { width: 22, height: 22 },
+  tabCountPill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: Colors.goldBg, borderWidth: 1, borderColor: Colors.border },
+  tabCountPillActive: { backgroundColor: 'rgba(255,255,255,0.18)', borderColor: 'rgba(255,255,255,0.35)' },
+  tabCountTxt: { fontSize: 9, fontWeight: '700', color: Colors.primary },
+  tabCountTxtActive: { color: Colors.white },
 
   brandGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, paddingHorizontal: 16 },
   brandCard: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: Colors.white, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, paddingHorizontal: 12, paddingVertical: 10 },
   brandSwatch: { width: 44, height: 44, borderRadius: 8, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
+  brandLogo: { width: 44, height: 44, borderRadius: 8 },
   brandName: { fontSize: 11, fontWeight: '800', color: Colors.text, fontFamily: 'serif' },
   brandMeta: { fontSize: 9, color: Colors.muted, marginTop: 2 },
 

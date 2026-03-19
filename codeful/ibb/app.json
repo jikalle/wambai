@@ -23,6 +23,7 @@
       },
       "package": "com.arewadrape.app"
     },
+    "scheme": "arewadrape",
     "plugins": [
       "expo-font",
       "expo-image-picker"

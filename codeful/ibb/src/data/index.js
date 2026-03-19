@@ -9,6 +9,11 @@ export const SWATCHES = {
   brocade:    { colors: ['#2D6B4A','#1A4A32','#C9922A','#3D8A62'] },
   shadda:     { colors: ['#FAF3E8','#EDE3D4','#C9922A','#F5EFE6'] },
   embroidery: { colors: ['#C9922A','#6B1F1F','#4A1A6B','#FAF3E8'] },
+  shoes:      { colors: ['#2A1A0E','#C9922A','#FAF3E8','#6B1F1F'] },
+  caps:       { colors: ['#1E2E6E','#C9922A','#FAF3E8','#2A4BBF'] },
+  bags:       { colors: ['#2D6B4A','#C9922A','#FAF3E8','#1A4A32'] },
+  chains:     { colors: ['#C9922A','#FAF3E8','#6B1F1F','#2A1A0E'] },
+  earrings:   { colors: ['#6B1F1F','#C9922A','#FAF3E8','#4A1A6B'] },
 };
 
 export const CATEGORIES = [
@@ -22,6 +27,11 @@ export const CATEGORIES = [
   { id:'8',  key:'brocade',   label:'Brocade',          count:45,  desc:'Ceremonial'      },
   { id:'9',  key:'shadda',    label:'Shadda',           count:52,  desc:'Fine shimmer'    },
   { id:'10', key:'embroidery',label:'Embroidery',       count:29,  desc:'Hand-crafted'    },
+  { id:'11', key:'shoes',     label:'Shoes',            count:0,   desc:'Footwear'        },
+  { id:'12', key:'caps',      label:'Caps',             count:0,   desc:'Headwear'        },
+  { id:'13', key:'bags',      label:'Bags',             count:0,   desc:'Carryalls'       },
+  { id:'14', key:'chains',    label:'Chains',           count:0,   desc:'Accessories'     },
+  { id:'15', key:'earrings',  label:'Earrings',         count:0,   desc:'Jewelry'         },
 ];
 
 export const PRODUCTS = [

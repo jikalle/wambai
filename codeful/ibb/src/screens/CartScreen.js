@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  TextInput, StyleSheet, Alert, Dimensions,
+  TextInput, StyleSheet, Alert, Dimensions, Image, Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -9,8 +9,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Radius, Shadow } from '../theme';
 import { FabricSwatch, Button, QtySelector, EmptyState, Divider } from '../components';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
+import { supabase, isSupabaseConfigured, invokeFunction } from '../lib/supabase';
 
 const { width: W } = Dimensions.get('window');
+const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
 
 const DELIVERY_OPTIONS = [
   { key:'standard', label:'Standard Delivery',  sub:'3–5 business days', price:1500 },
@@ -20,11 +23,15 @@ const DELIVERY_OPTIONS = [
 
 export default function CartScreen({ navigation }) {
   const { items, removeItem, updateQty, total, clearCart } = useCart();
+  const { user } = useAuth();
   const [step, setStep] = useState('cart'); // 'cart' | 'checkout' | 'success'
   const [delivery, setDelivery] = useState('standard');
   const [coupon, setCoupon] = useState('');
   const [couponApplied, setCouponApplied] = useState(false);
   const [form, setForm] = useState({ name:'', phone:'', address:'', city:'' });
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const [lastOrderId, setLastOrderId] = useState(null);
+  const [pendingPayment, setPendingPayment] = useState(false);
 
   const deliveryPrice = DELIVERY_OPTIONS.find(d => d.key === delivery)?.price || 0;
   const discount = couponApplied ? Math.round(total * 0.1) : 0;
@@ -39,17 +46,105 @@ export default function CartScreen({ navigation }) {
     }
   };
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!form.name || !form.phone || !form.address || !form.city) {
       Alert.alert('Missing Info', 'Please fill in all delivery details.');
       return;
     }
+    if (!isSupabaseConfigured || !supabase) {
+      Alert.alert('Supabase Not Configured', 'Please configure Supabase env variables.');
+      return;
+    }
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in to place an order.');
+      return;
+    }
+    if (!user?.email) {
+      Alert.alert('Email Required', 'Please add an email address to your account to continue.');
+      return;
+    }
+    setPlacingOrder(true);
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .insert({
+        user_id: user.id,
+        status: 'pending',
+        payment_status: 'unpaid',
+        currency: 'NGN',
+        subtotal: total,
+        delivery_fee: deliveryPrice,
+        discount,
+        total: grandTotal,
+        customer_name: form.name,
+        customer_phone: form.phone,
+        delivery_address: form.address,
+        delivery_city: form.city,
+      })
+      .select('id')
+      .single();
+    if (orderErr || !order?.id) {
+      setPlacingOrder(false);
+      Alert.alert('Order Failed', orderErr?.message || 'Could not create order.');
+      return;
+    }
+    const itemsPayload = items.map(i => ({
+      order_id: order.id,
+      product_id: isUuid(i.id) ? i.id : null,
+      shop_id: isUuid(i.shopId) ? i.shopId : null,
+      qty: i.qty,
+      price: i.price,
+      total: i.price * i.qty,
+      selected_image_url: i.selectedImage || i.image || null,
+      selected_image_id: isUuid(i.selectedImageId) ? i.selectedImageId : null,
+    }));
+    const { error: itemsErr } = await supabase.from('order_items').insert(itemsPayload);
+    if (itemsErr) {
+      setPlacingOrder(false);
+      Alert.alert('Order Failed', itemsErr.message || 'Could not create order items.');
+      return;
+    }
+    const { data: payment, error: payErr } = await invokeFunction('fincra-initiate', {
+        orderId: order.id,
+        customer: {
+          name: form.name,
+          email: user.email,
+          phoneNumber: form.phone,
+        },
+    });
+    if (payErr || !payment?.link) {
+      setPlacingOrder(false);
+      clearCart();
+      setLastOrderId(order.id);
+      setPendingPayment(true);
+      const errMsg = payErr?.message || payment?.error || payment?.message || null;
+      Alert.alert(
+        'Payment Link Failed',
+        errMsg
+          ? `Order created, but payment link failed: ${errMsg}`
+          : 'Order created, but we could not open payment. You can retry from Order Details.',
+        [{ text: 'OK', onPress: () => setStep('success') }],
+      );
+      return;
+    }
+    setPlacingOrder(false);
     clearCart();
+    setLastOrderId(order.id);
+    setPendingPayment(true);
+    Linking.openURL(payment.link);
     setStep('success');
   };
 
   if (step === 'success') {
-    return <OrderSuccess onContinue={() => { setStep('cart'); navigation.navigate('HomeTab'); }} />;
+    return (
+      <OrderSuccess
+        pendingPayment={pendingPayment}
+        orderId={lastOrderId}
+        onContinue={() => { setStep('cart'); setPendingPayment(false); setLastOrderId(null); navigation.navigate('HomeTab'); }}
+        onViewOrder={() => {
+          if (lastOrderId) navigation.navigate('OrderDetail', { orderId: lastOrderId });
+        }}
+      />
+    );
   }
 
   return (
@@ -103,15 +198,18 @@ export default function CartScreen({ navigation }) {
               {/* Cart items */}
               <View style={s.section}>
                 {items.map(item => (
-                  <View key={item.id} style={[s.cartItem, Shadow.sm]}>
-                    <FabricSwatch swatchKey={item.swatch} width={80} height={80} borderRadius={Radius.md} />
+                    <View key={item.cartItemId || item.id} style={[s.cartItem, Shadow.sm]}>
+                    {item.image
+                      ? <Image source={{ uri: item.image }} style={s.cartImage} />
+                      : <FabricSwatch swatchKey={item.swatch} width={80} height={80} borderRadius={Radius.md} />
+                    }
                     <View style={s.cartInfo}>
                       <Text style={s.cartName} numberOfLines={2}>{item.name}</Text>
                       <Text style={s.cartMeta}>{item.yards} · {item.origin}</Text>
                       <Text style={s.cartPrice}>₦{Number(item.price).toLocaleString()}</Text>
-                      <QtySelector value={item.qty} onChange={q => updateQty(item.id, q)} />
+                      <QtySelector value={item.qty} onChange={q => updateQty(item.cartItemId || item.id, q)} />
                     </View>
-                    <TouchableOpacity style={s.deleteBtn} onPress={() => removeItem(item.id)}>
+                    <TouchableOpacity style={s.deleteBtn} onPress={() => removeItem(item.cartItemId || item.id)}>
                       <Ionicons name="trash-outline" size={18} color={Colors.sale} />
                     </TouchableOpacity>
                   </View>
@@ -207,7 +305,9 @@ export default function CartScreen({ navigation }) {
               {/* Payment method */}
               <View style={s.section}>
                 <Text style={s.sectionTitle}>Payment Method</Text>
-                {[['paystack','Debit/Credit Card via Paystack','💳'],['transfer','Bank Transfer','🏦'],['ussd','USSD (*737#)','📱']].map(([k,l,ic]) => (
+                {[
+                  ['fincra', 'Fincra Checkout (Card, Transfer, PayAttitude)', '💳'],
+                ].map(([k, l, ic]) => (
                   <View key={k} style={s.payMethod}>
                     <Text style={s.payIcon}>{ic}</Text>
                     <Text style={s.payLabel}>{l}</Text>
@@ -254,9 +354,10 @@ export default function CartScreen({ navigation }) {
             <Text style={s.ctaTotalVal}>₦{Number(grandTotal).toLocaleString()}</Text>
           </View>
           <Button
-            title={step === 'cart' ? 'Proceed to Checkout →' : 'Place Order & Pay →'}
+            title={step === 'cart' ? 'Proceed to Checkout →' : (placingOrder ? 'Placing Order…' : 'Place Order & Pay →')}
             onPress={step === 'cart' ? () => setStep('checkout') : handlePlaceOrder}
             style={s.ctaBtn}
+            disabled={placingOrder}
           />
         </View>
       )}
@@ -265,28 +366,26 @@ export default function CartScreen({ navigation }) {
 }
 
 // ── Order Success ─────────────────────────────────────────────────────────────
-function OrderSuccess({ onContinue }) {
+function OrderSuccess({ onContinue, pendingPayment, orderId, onViewOrder }) {
   return (
     <SafeAreaView style={{ flex:1, backgroundColor:Colors.white }}>
       <View style={os.wrap}>
         <LinearGradient colors={[Colors.primary, '#9B2E2E']} style={os.circle}>
           <Ionicons name="checkmark" size={52} color="#fff" />
         </LinearGradient>
-        <Text style={os.title}>Order Placed!</Text>
-        <Text style={os.sub}>Your order has been confirmed. You'll receive an SMS on your registered number when it's dispatched.</Text>
+        <Text style={os.title}>{pendingPayment ? 'Order Created' : 'Order Placed!'}</Text>
+        <Text style={os.sub}>
+          {pendingPayment
+            ? 'Complete payment to confirm your order.'
+            : "Your order has been confirmed. You'll receive an SMS on your registered number when it's dispatched."}
+        </Text>
         <View style={os.orderRef}>
           <Text style={os.refLbl}>ORDER REFERENCE</Text>
-          <Text style={os.refVal}>ORD-{Math.floor(Math.random()*9000)+1000}</Text>
+          <Text style={os.refVal}>{orderId ? `ORD-${orderId.slice(0, 6).toUpperCase()}` : `ORD-${Math.floor(Math.random()*9000)+1000}`}</Text>
         </View>
-        <View style={os.track}>
-          {[['Confirmed','✓'],['Processing','●'],['Shipped','○'],['Delivered','○']].map(([l,ic],i) => (
-            <View key={l} style={os.trackStep}>
-              <View style={[os.trackDot, i<=1&&os.trackDotActive]}><Text style={os.trackDotTxt}>{ic}</Text></View>
-              <Text style={[os.trackLbl, i<=1&&os.trackLblActive]}>{l}</Text>
-              {i<3 && <View style={[os.trackLine, i===0&&os.trackLineActive]} />}
-            </View>
-          ))}
-        </View>
+        {pendingPayment && (
+          <Button title="View Order" onPress={onViewOrder} style={os.viewBtn} />
+        )}
         <Button title="Continue Shopping" onPress={onContinue} style={os.btn} />
       </View>
     </SafeAreaView>
@@ -312,6 +411,7 @@ const s = StyleSheet.create({
   section:      { backgroundColor:Colors.white, margin:16, marginBottom:0, borderRadius:Radius.lg, padding:16, borderWidth:1, borderColor:Colors.border },
   sectionTitle: { fontSize:15, fontWeight:'800', color:Colors.text, fontFamily:'serif', marginBottom:14 },
   cartItem:     { flexDirection:'row', gap:12, marginBottom:14, paddingBottom:14, borderBottomWidth:1, borderBottomColor:Colors.border },
+  cartImage:    { width:80, height:80, borderRadius:Radius.md, borderWidth:1, borderColor:Colors.border, backgroundColor:Colors.cream },
   cartInfo:     { flex:1, gap:4 },
   cartName:     { fontSize:13, fontWeight:'800', color:Colors.text, fontFamily:'serif', lineHeight:18 },
   cartMeta:     { fontSize:10, color:Colors.muted },
@@ -358,14 +458,6 @@ const os = StyleSheet.create({
   orderRef:{ backgroundColor:Colors.cream, borderRadius:Radius.md, padding:16, alignItems:'center', marginBottom:24, borderWidth:1, borderColor:Colors.border, width:'100%' },
   refLbl:  { fontSize:10, color:Colors.muted, fontWeight:'700', letterSpacing:1, marginBottom:4 },
   refVal:  { fontSize:22, fontWeight:'900', color:Colors.primary, fontFamily:'serif' },
-  track:   { flexDirection:'row', alignItems:'flex-start', marginBottom:32, width:'100%', justifyContent:'center' },
-  trackStep:{ alignItems:'center', position:'relative', flex:1 },
-  trackDot:{ width:28, height:28, borderRadius:14, backgroundColor:Colors.border, alignItems:'center', justifyContent:'center', marginBottom:4 },
-  trackDotActive:{ backgroundColor:Colors.primary },
-  trackDotTxt:{ fontSize:10, color:'#fff', fontWeight:'800' },
-  trackLbl:{ fontSize:9, color:Colors.muted, textAlign:'center', fontWeight:'600' },
-  trackLblActive:{ color:Colors.primary, fontWeight:'800' },
-  trackLine:{ position:'absolute', top:14, left:'50%', width:'100%', height:2, backgroundColor:Colors.border, zIndex:-1 },
-  trackLineActive:{ backgroundColor:Colors.primary },
+  viewBtn: { width:'100%', paddingVertical:15, marginBottom:10 },
   btn:     { width:'100%', paddingVertical:15 },
 });
